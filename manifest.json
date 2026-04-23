@@ -1,0 +1,11 @@
+{
+  "id": "obsidian-log-exporter",
+  "name": "Obsidian Log Exporter",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Expose Obsidian sync, edit-history, and metadata logs to local agents and external tooling",
+  "author": "AIC",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": true
+}
