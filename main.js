@@ -9,12 +9,19 @@ const LEGACY_STATUS_FILE = '.obsidian/sync_history_plugin_status.json';
 const LEGACY_EXPORT_FILE = '.obsidian/sync_history_export.json';
 const LEGACY_PROBE_FILE = '.obsidian/sync_history_probe.json';
 
+// Debounce delay for real-time export (ms)
+const DEBOUNCE_MS = 3000;
+
 module.exports = class ObsidianLogExporter extends Plugin {
     async onload() {
         console.log("[ObsidianLogExporter] Plugin loaded, waiting for metadata sources...");
         await this.writeStatus("loaded", {
-            plugin_version: "instrumented-v2"
+            plugin_version: "realtime-v1"
         });
+        
+        this.debounceTimer = null;
+        this.syncReady = false;
+        this.fileEventsRegistered = false;
         
         this.addCommand({
             id: 'run-obsidian-log-export',
@@ -31,7 +38,7 @@ module.exports = class ObsidianLogExporter extends Plugin {
             }
         });
 
-        // Wait for Sync to initialize, then run
+        // Wait for Sync to initialize, then run initial export + register listeners
         this.waitForSyncAndProbe();
     }
 
@@ -66,9 +73,11 @@ module.exports = class ObsidianLogExporter extends Plugin {
                 });
                 
                 if (inst.initialized && inst.ready) {
-                    console.log("[ObsidianLogExporter] Sync is ready. Exporting logs...");
+                    console.log("[ObsidianLogExporter] Sync is ready. Running initial export...");
                     new Notice("Obsidian Log Exporter: Sync ready, exporting logs...");
+                    this.syncReady = true;
                     await this.runDeepProbe();
+                    this.registerFileEvents();
                     return;
                 }
             }
@@ -81,6 +90,35 @@ module.exports = class ObsidianLogExporter extends Plugin {
         new Notice("Obsidian Log Exporter: Sync not ready after 60s, exporting partial data...");
         await this.writeStatus("sync_wait_timeout", { waited_seconds: waited });
         await this.runDeepProbe();
+        this.registerFileEvents();
+    }
+
+    registerFileEvents() {
+        if (this.fileEventsRegistered) return;
+        this.fileEventsRegistered = true;
+        
+        console.log("[ObsidianLogExporter] Registering real-time file event listeners...");
+        
+        const debouncedExport = () => {
+            if (this.debounceTimer) clearTimeout(this.debounceTimer);
+            this.debounceTimer = setTimeout(async () => {
+                console.log("[ObsidianLogExporter] File change detected, re-exporting...");
+                await this.writeStatus("realtime_triggered");
+                try {
+                    await this.runDeepProbe();
+                } catch (e) {
+                    console.error("[ObsidianLogExporter] Real-time export failed:", e);
+                }
+            }, DEBOUNCE_MS);
+        };
+        
+        // Listen to all vault file changes
+        this.registerEvent(this.app.vault.on('create', debouncedExport));
+        this.registerEvent(this.app.vault.on('modify', debouncedExport));
+        this.registerEvent(this.app.vault.on('delete', debouncedExport));
+        this.registerEvent(this.app.vault.on('rename', debouncedExport));
+        
+        console.log("[ObsidianLogExporter] Real-time listeners active.");
     }
 
     async runDeepProbe() {
@@ -274,6 +312,7 @@ module.exports = class ObsidianLogExporter extends Plugin {
     }
 
     onunload() {
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
         console.log("[ObsidianLogExporter] Plugin unloaded");
     }
 };

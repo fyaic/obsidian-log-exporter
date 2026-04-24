@@ -1,0 +1,46 @@
+{
+  "name": "knowledge-growth-daily-broadcast",
+  "description": "每日 16:00 播报 Rosetta、Veil 的 Obsidian 知识库增量贡献",
+  "enabled": true,
+  "schedule": {
+    "cron": "0 16 * * *",
+    "timezone": "Asia/Shanghai",
+    "comment": "每天下午 4 点执行"
+  },
+  "command": {
+    "working_directory": "C:\\Hello-World\\knowledge-growth",
+    "entrypoint": "python",
+    "args": ["daily_broadcast.py"],
+    "comment": "入口脚本：daily_broadcast.py。扫描过去 24h 的 Obsidian 增量，生成简洁播报文本输出到 stdout，同时写入 reports/broadcast_YYYY-MM-DD.txt"
+  },
+  "environment": {
+    "VAULT_PATH": "C:\\Users\\ryshi\\Documents\\AIC-000",
+    "NAME_ALIAS": "{\"Rosetta Guo\":\"Rosetta\",\"veilchow\":\"Veil\"}",
+    "REPORTS_DIR": "./reports"
+  },
+  "output": {
+    "stdout_capture": true,
+    "file_output": "reports/broadcast_YYYY-MM-DD.txt",
+    "comment": "stdout 即为播报正文，可直接转发到 Slack/WeCom/邮件"
+  },
+  "system_instruction_for_agent": {
+    "role": "你是一个每日知识库播报助手",
+    "task": "每天 16:00 运行 C:\\Hello-World\\knowledge-growth\\daily_broadcast.py",
+    "behavior": [
+      "执行后捕获 stdout 作为播报正文",
+      "将播报正文发送到指定的消息通道",
+      "如果 stdout 为空或只有 '今日无更新'，则跳过发送",
+      "如果执行失败，记录错误日志并通知管理员"
+    ],
+    "delivery_channel": {
+      "current": "Slack",
+      "channel_id": "C0AE7L7J0EL",
+      "note": "如需更换 IM 渠道（WeCom、Discord、Telegram 等），请修改 cron job 的 system-event 中的 channel ID，并确保 OpenClaw 已配置对应渠道的 credentials"
+    },
+    "dependencies": [
+      "Obsidian 必须正在运行（obsidian-log-exporter 插件实时导出 Sync 数据）",
+      "obsidian_log_export.json 必须存在，且 exported_at 为今日"
+    ],
+    "fallback": "如果 Sync 数据不可用，所有文件会显示为 unknown，此时应提示用户检查 Obsidian 是否在线"
+  }
+}
