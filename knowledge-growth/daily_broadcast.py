@@ -18,6 +18,10 @@ from scanner import scan_daily_increments
 # Document classification
 # ──────────────────────────────
 
+# Contributors considered part of the team for cross-attention purposes
+_TEAM_MEMBERS = {"Rosetta", "Veil"}
+
+
 def _classify_doc(rel_path: str, title: str) -> tuple:
     path_lower = rel_path.lower()
     title_lower = title.lower()
@@ -31,71 +35,83 @@ def _classify_doc(rel_path: str, title: str) -> tuple:
     else:
         display_path = " / ".join(parts[:2])
 
+    # Default: not noteworthy unless it matches a meaningful category
     doc_type = "文档"
     impact = "知识库有更新"
     suggestion = ""
-    is_noteworthy = True
+    is_noteworthy = False
 
     if any(k in full for k in ["prd", "产品需求", "需求文档", "m0", "m01", "m02", "m03", "m04"]):
         doc_type = "PRD"
         impact = "产品需求/验收标准可能有更新"
         suggestion = "对照自检，确认实现覆盖"
+        is_noteworthy = True
     elif any(k in full for k in ["验收", "checklist", "验收清单"]):
         doc_type = "验收清单"
         impact = "验收标准变了"
         suggestion = "新增文档建议对照自检"
+        is_noteworthy = True
     elif any(k in full for k in ["官网", "文案", "roadmap", "定位", "发布会", "宣传"]):
         doc_type = "官网文案"
         impact = "产品定位/对外口径可能变化"
         suggestion = "同步术语，统一对外表述"
+        is_noteworthy = True
     elif any(k in full for k in ["技术方案", "架构", "探针", "side panel", "wecom", "企业微信", "gateway", "权限配置", "接入方案"]):
         doc_type = "技术方案"
         impact = "技术实现方案/接入限制有更新"
         suggestion = "确认是否影响现有 PRD 假设"
+        is_noteworthy = True
     elif any(k in full for k in ["技术讨论", "问题排查", "故障", "bug", "fix", "启动命令错误", "权限丢失", "连接问题"]):
         doc_type = "技术讨论"
         impact = "技术问题/排障记录有更新"
         suggestion = "关注问题根因，确认是否有通用解决方案"
-    elif any(k in full for k in ["调研", "分析", "推荐算法", "交传", "录音", "plaud", "转写"]):
-        doc_type = "调研"
-        impact = "调研案例库在扩展"
-        suggestion = "暂不需要响应，信息同步即可"
-        is_noteworthy = False
+        is_noteworthy = True
     elif any(k in full for k in ["会议纪要", "会议记录", "会议精神"]):
         doc_type = "会议纪要"
         impact = "会议决策/结论已记录"
         suggestion = "关注决策项，确认执行分工"
+        is_noteworthy = True
     elif any(k in full for k in ["openclaw", "cron", "自动化", "工程", "工具链", "plugin", "插件开发"]):
         doc_type = "工程"
         impact = "自动化/工具链有更新"
         suggestion = "关注工具变更对 workflow 的影响"
+        is_noteworthy = True
     elif any(k in full for k in ["hermes", "dsearch", "技术调研", "开发现状", "机会研究"]):
         doc_type = "技术调研"
         impact = "技术调研/方案有更新"
         suggestion = "关注技术选型影响"
+        is_noteworthy = True
     elif any(k in full for k in ["功能能力", "进展梳理", "能力梳理", "功能列表"]):
         doc_type = "产品梳理"
         impact = "产品功能/进展有更新"
         suggestion = "同步团队，确认 roadmap 一致性"
+        is_noteworthy = True
     elif any(k in full for k in ["用户手册", "使用说明", "操作指南", "手册"]):
         doc_type = "用户文档"
         impact = "用户-facing 文档有更新"
         suggestion = "确认是否需要同步给客户/用户"
+        is_noteworthy = True
+    # Low-value categories — explicitly not noteworthy
+    elif any(k in full for k in ["调研", "分析", "推荐算法", "交传", "录音", "plaud", "转写"]):
+        doc_type = "调研"
+        impact = "调研案例库在扩展"
+        suggestion = "暂不需要响应，信息同步即可"
     elif any(k in full for k in ["聊天记录", "wx聊天记录", "聊天"]):
         doc_type = "聊天记录"
         impact = "群聊信息已归档"
         suggestion = "快速浏览，提取关键决策/行动项"
-        is_noteworthy = False
     elif any(k in full for k in ["日报", "观测日记", "跟踪记录", "周报"]):
         doc_type = "跟踪记录"
         impact = "日常跟踪/观测记录有更新"
         suggestion = "关注异常指标或趋势变化"
-        is_noteworthy = False
     elif any(k in full for k in ["报销", "行政", "注意事项", "部门报销"]):
         doc_type = "行政"
         impact = "行政/财务流程有更新"
         suggestion = "确认是否需要执行相关流程"
-        is_noteworthy = False
+    elif any(k in full for k in ["资料收集", "web clippings", "clippings", "newsletter", "rss"]):
+        doc_type = "资料收集"
+        impact = "外部资料/参考信息已归档"
+        suggestion = "快速浏览，提取与当前项目相关的洞察"
 
     return display_path, doc_type, impact, suggestion, is_noteworthy
 
@@ -198,7 +214,8 @@ def _detect_clusters(files):
 # ──────────────────────────────
 
 def _build_cross_attention(results_by_contributor: dict) -> list:
-    all_people = [c for c in results_by_contributor if c != "unknown"]
+    # Only team members participate in cross-attention
+    all_people = [c for c in results_by_contributor if c in _TEAM_MEMBERS]
     if len(all_people) < 2:
         return []
 
@@ -206,7 +223,7 @@ def _build_cross_attention(results_by_contributor: dict) -> list:
     seen = set()
 
     for contributor, files in results_by_contributor.items():
-        if contributor == "unknown":
+        if contributor not in _TEAM_MEMBERS:
             continue
         for f in files:
             if f["filename"].replace(".md", "").lower() in _GENERIC_FILENAMES:
@@ -245,7 +262,10 @@ def _build_cross_attention(results_by_contributor: dict) -> list:
         if not watch_items:
             continue
 
+        # Sort by priority, then cap to avoid spam
         watch_items.sort(key=lambda x: (-x["priority"], x["watch_who"]))
+        watch_items = watch_items[:5]
+
         primary_counter = Counter()
         for item in watch_items:
             primary_counter[item["watch_who"]] += item["priority"] + 1
@@ -365,7 +385,7 @@ def _build_global_insights(results_by_contributor: dict, all_files: list) -> lis
     person_themes = {}
     person_themes_full = {}
     for c, files in results_by_contributor.items():
-        if c == "unknown":
+        if c not in _TEAM_MEMBERS:
             continue
         cf = _clean_files(files)
         if not cf:
@@ -419,7 +439,7 @@ def build_broadcast(results_by_contributor: dict) -> str:
         lines.append("今日无更新。")
         return "\n".join(lines)
 
-    results_by_contributor = {k: v for k, v in results_by_contributor.items() if v and k != "unknown"}
+    results_by_contributor = {k: v for k, v in results_by_contributor.items() if v and k in _TEAM_MEMBERS}
     if not results_by_contributor:
         lines.append("今日无更新。")
         return "\n".join(lines)
@@ -471,9 +491,9 @@ def build_broadcast(results_by_contributor: dict) -> str:
     lines.append("【个人工作摘要】")
     lines.append("")
 
-    for contributor in sorted(results_by_contributor.keys(), key=lambda c: (c == "unknown", c)):
+    for contributor in sorted(results_by_contributor.keys()):
         files = results_by_contributor[contributor]
-        if contributor == "unknown" or not files:
+        if not files:
             continue
 
         bullets = _summarize_person(contributor, files)
@@ -505,7 +525,7 @@ def build_dm_text(observer: str, results_by_contributor: dict) -> str:
     Returns empty string if no cross-attention for this observer.
     """
     today = datetime.datetime.now().strftime("%Y-%m-%d")
-    results_by_contributor = {k: v for k, v in results_by_contributor.items() if v and k != "unknown"}
+    results_by_contributor = {k: v for k, v in results_by_contributor.items() if v and k in _TEAM_MEMBERS}
     if observer not in results_by_contributor:
         return ""
 

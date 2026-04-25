@@ -101,25 +101,34 @@ def extract_frontmatter_author(content: str) -> str:
     return ""
 
 
+# Known team members — frontmatter authors outside this set are treated as external
+# sources (e.g. web clippings, imported articles) and ignored for attribution.
+_KNOWN_MEMBERS = {"Rosetta", "Veil"}
+
+
 def guess_contributor(rel_path: str, content: str = "", sync_meta: Optional[dict] = None) -> str:
     """
     Determine contributor from authoritative sources only:
-    1. frontmatter author (self-declared in file)
+    1. frontmatter author (self-declared in file) — ONLY trusted for known team members
     2. Obsidian Sync username/device (edit log)
 
     No path-based guessing. If no authoritative source, returns "unknown".
     """
-    # 1. Check frontmatter author
+    from config import NAME_ALIAS
+
+    # 1. Check frontmatter author — only trust if it resolves to a known team member
     if content:
         fm_author = extract_frontmatter_author(content)
         if fm_author:
-            return fm_author
+            normalized = NAME_ALIAS.get(fm_author, fm_author)
+            if normalized in _KNOWN_MEMBERS:
+                return normalized
+            # External author (e.g. web clipper import) — fall through to sync logs
 
     # 2. Check Obsidian Sync username/device mapping
     sync_meta = sync_meta or {}
     sync_username = str(sync_meta.get("username", "") or "")
     if sync_username:
-        from config import NAME_ALIAS
         return NAME_ALIAS.get(sync_username, sync_username)
 
     sync_device = str(sync_meta.get("device", "") or "")
