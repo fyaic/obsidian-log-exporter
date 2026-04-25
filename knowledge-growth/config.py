@@ -63,6 +63,13 @@ if _DM_CHANNELS_RAW:
     except json.JSONDecodeError:
         pass
 
+# Default DM channels (can be overridden by env var above)
+if not DM_CHANNELS:
+    DM_CHANNELS = {
+        "Rosetta": "D0AH3RMFQQ1",
+        "Veil": "D0AHK6X1N6L",
+    }
+
 # --- Output ---
 REPORTS_DIR = Path(os.getenv("REPORTS_DIR", "./reports"))
 
