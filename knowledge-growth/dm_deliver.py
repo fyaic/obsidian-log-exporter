@@ -40,16 +40,20 @@ def main():
     results = {k: v for k, v in results.items() if v}
 
     # 2. Load DM channel mapping
+    # Priority: env var > config.py default
     # Supports flexible formats:
     #   {"Rosetta": "D0AH3RMFQQ1", "Veil": "D0AHK6X1N6L"}
     #   {"Rosetta": {"slack": "D0AH3RMFQQ1"}, "Veil": {"slack": "D0AHK6X1N6L"}}
-    dm_raw = os.environ.get("DM_CHANNELS", "{}")
-    try:
-        dm_config = json.loads(dm_raw)
-    except json.JSONDecodeError:
-        print("Invalid DM_CHANNELS JSON, skipping DM delivery")
-        return
-
+    dm_raw = os.environ.get("DM_CHANNELS", "")
+    dm_config = {}
+    if dm_raw:
+        try:
+            dm_config = json.loads(dm_raw)
+        except json.JSONDecodeError:
+            print("Invalid DM_CHANNELS JSON, falling back to config.py default")
+    if not dm_config:
+        from config import DM_CHANNELS as _DM_CFG
+        dm_config = _DM_CFG
     if not dm_config:
         print("DM_CHANNELS not configured, skipping DM delivery")
         return
