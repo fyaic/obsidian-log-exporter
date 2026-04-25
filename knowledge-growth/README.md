@@ -76,6 +76,15 @@ NAME_ALIAS={"Rosetta Guo":"Rosetta","veilchow":"Veil"}
 
 # 设备名 fallback 映射（当 Sync username 为空时用）
 DEVICE_MAP={"Rosetta":"Rosetta","fuyo-aicdeMac-mini.local":"Veil"}
+
+# 可选：DM 投递渠道映射（JSON）
+# 简单格式：{"Rosetta": "D0AH3RMFQQ1", "Veil": "D0AHK6X1N6L"}
+# 字典格式（多渠道预留）：{"Rosetta": {"slack": "D0AH3RMFQQ1"}, "Veil": {"slack": "D0AHK6X1N6L"}}
+# 不配此项则 dm_deliver.py 直接跳过，不强制耦合任何 IM
+DM_CHANNELS={"Rosetta":"D0AH3RMFQQ1","Veil":"D0AHK6X1N6L"}
+
+# 可选：Slack Bot Token（仅当启用 DM 投递时需要）
+SLACK_BOT_TOKEN=xoxb-...
 ```
 
 ---
@@ -89,6 +98,16 @@ python daily_broadcast.py
 ```
 
 输出到 stdout，同时写入 `reports/broadcast_YYYY-MM-DD.txt`。
+
+### DM 交叉关注投递（可选）
+
+```bash
+python dm_deliver.py
+```
+
+为每个人生成"对方工作摘要 + 需关注的更新"，私聊到个人 IM 渠道。
+
+> 需要配置 `DM_CHANNELS` 和 `SLACK_BOT_TOKEN`（或其他渠道 token）。不配则自动跳过，不强耦合任何平台。
 
 ### 手动回溯
 
@@ -105,6 +124,7 @@ python daily_broadcast.py --days 3
 ```
 .
 ├── daily_broadcast.py   # 播报生成器入口（三模块结构）
+├── dm_deliver.py        # DM 交叉关注投递（可选，不强耦合 IM）
 ├── scanner.py           # 扫描 + contributor 归因（读 Sync 导出）
 ├── reporter.py          # Markdown 报告生成（旧，保留兼容）
 ├── config.py            # 配置读取
@@ -126,10 +146,19 @@ openclaw cron add --name "knowledge-growth-daily-broadcast" \
   --cron "0 16 * * *" --tz "Asia/Shanghai"
 ```
 
-- **运行**：每天 16:00 执行 `python daily_broadcast.py`
-- **输出**：stdout 即为播报正文
-- **投递**：Slack `C0AE7L7J0EL`
-- **跳过条件**：stdout 为空或含"今日无更新"
+### 双任务模式
+
+每天 16:00 执行两个任务：
+
+1. **群聊播报** `python daily_broadcast.py`
+   - stdout 即为播报正文
+   - 投递到 Slack `C0AE7L7J0EL`
+   - 跳过条件：stdout 为空或含"今日无更新"
+
+2. **DM 投递** `python dm_deliver.py`
+   - 为每个人生成"对方工作摘要 + 需关注的更新"
+   - 私聊到个人渠道（如 Slack DM）
+   - 跳过条件：`DM_CHANNELS` 未配置或当日无交叉关注
 
 详见 `cron_example.json`。
 

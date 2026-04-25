@@ -50,6 +50,19 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+# --- DM Delivery (optional) ---
+# JSON mapping of contributor -> IM channel(s).
+# Simple string (Slack channel ID): {"Rosetta": "D0AH3RMFQQ1", "Veil": "D0AHK6X1N6L"}
+# Dict format (multi-channel, future-proof): {"Rosetta": {"slack": "D0AH3RMFQQ1"}, "Veil": {"slack": "D0AHK6X1N6L"}}
+# If empty, dm_deliver.py skips DM delivery — no hard dependency on any IM platform.
+_DM_CHANNELS_RAW = os.getenv("DM_CHANNELS", "")
+DM_CHANNELS = {}
+if _DM_CHANNELS_RAW:
+    try:
+        DM_CHANNELS = json.loads(_DM_CHANNELS_RAW)
+    except json.JSONDecodeError:
+        pass
+
 # --- Output ---
 REPORTS_DIR = Path(os.getenv("REPORTS_DIR", "./reports"))
 

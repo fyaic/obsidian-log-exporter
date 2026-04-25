@@ -498,6 +498,74 @@ def build_broadcast(results_by_contributor: dict) -> str:
     return "\n".join(lines)
 
 
+def build_dm_text(observer: str, results_by_contributor: dict) -> str:
+    """
+    Generate DM text for a specific observer.
+    Content: other person's summary + cross-attention items about them.
+    Returns empty string if no cross-attention for this observer.
+    """
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    results_by_contributor = {k: v for k, v in results_by_contributor.items() if v and k != "unknown"}
+    if observer not in results_by_contributor:
+        return ""
+
+    # Find cross-attention block for this observer
+    cross_blocks = _build_cross_attention(results_by_contributor)
+    observer_block = None
+    for obs, primary, items in cross_blocks:
+        if obs == observer:
+            observer_block = (obs, primary, items)
+            break
+
+    if not observer_block:
+        return ""
+
+    _, primary, watch_items = observer_block
+    # Keep only items from the primary watch person (not all others)
+    primary_items = [it for it in watch_items if it["watch_who"] == primary]
+    if not primary_items:
+        return ""
+
+    lines = [f"[{today} 今日关注提醒]", ""]
+
+    # 1. Other person's work summary
+    other_summary = _summarize_person(primary, results_by_contributor.get(primary, []))
+    if other_summary:
+        lines.append(f"【{primary} 今日工作】")
+        for b in other_summary:
+            lines.append(f"• {b}")
+        lines.append("")
+        lines.append("───")
+        lines.append("")
+
+    # 2. Cross-attention items from primary only, max 5
+    lines.append(f"【{primary} 的更新需要你关注】")
+    folder_items = defaultdict(list)
+    for item in primary_items:
+        parts = item["file"]["rel_path"].split("/")
+        folder = "/".join(parts[:-1]) if len(parts) > 1 else "(root)"
+        folder_items[folder].append(item)
+
+    shown = 0
+    for folder, fitems in sorted(folder_items.items(), key=lambda x: -len(x[1])):
+        if shown >= 5:
+            remaining = sum(len(v) for v in folder_items.values()) - shown
+            if remaining > 0:
+                lines.append(f"• … 还有 {remaining} 份来自 {primary}")
+            break
+        if len(fitems) == 1:
+            rel = fitems[0]["file"]["rel_path"]
+            lines.append(f"• {primary} 在 {rel} 有更新")
+        else:
+            lines.append(f"• {primary} 在 {folder}/ 有 {len(fitems)} 份更新")
+        lines.append(f"  → 影响：{fitems[0]['impact']}")
+        if fitems[0].get("suggestion"):
+            lines.append(f"  → 建议：@{primary} {fitems[0]['suggestion']}")
+        shown += len(fitems)
+
+    return "\n".join(lines)
+
+
 def main():
     results = scan_daily_increments(days=1)
     results = {k: v for k, v in results.items() if v}

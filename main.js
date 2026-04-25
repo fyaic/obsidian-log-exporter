@@ -1,4 +1,4 @@
-const { Plugin, Notice } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting } = require('obsidian');
 
 const STATUS_FILE = '.obsidian/obsidian_log_exporter_status.json';
 const EXPORT_FILE = '.obsidian/obsidian_log_export.json';
@@ -40,6 +40,8 @@ module.exports = class ObsidianLogExporter extends Plugin {
 
         // Wait for Sync to initialize, then run initial export + register listeners
         this.waitForSyncAndProbe();
+
+        this.addSettingTab(new ObsidianLogExporterSettingTab(this.app, this));
     }
 
     async writeStatus(stage, extra = {}) {
@@ -74,7 +76,7 @@ module.exports = class ObsidianLogExporter extends Plugin {
                 
                 if (inst.initialized && inst.ready) {
                     console.log("[ObsidianLogExporter] Sync is ready. Running initial export...");
-                    new Notice("Obsidian Log Exporter: Sync ready, exporting logs...");
+                    // Silent: no notice
                     this.syncReady = true;
                     await this.runDeepProbe();
                     this.registerFileEvents();
@@ -87,7 +89,7 @@ module.exports = class ObsidianLogExporter extends Plugin {
         }
         
         console.log("[ObsidianLogExporter] Sync not ready after 60s, exporting with partial data...");
-        new Notice("Obsidian Log Exporter: Sync not ready after 60s, exporting partial data...");
+        // Silent: no notice
         await this.writeStatus("sync_wait_timeout", { waited_seconds: waited });
         await this.runDeepProbe();
         this.registerFileEvents();
@@ -308,7 +310,81 @@ module.exports = class ObsidianLogExporter extends Plugin {
         });
         const msg = `Log export done. deviceName=${result.this_device.deviceName}, server_files=${result.server_files.length}, history_files=${Object.keys(result.all_sync_history).length}`;
         console.log(`[ObsidianLogExporter] ${msg}`);
-        new Notice(msg);
+        // Silent: no notice
+    }
+
+    async healthCheck() {
+        const checks = [];
+        let ok = true;
+
+        // 1. Plugin instance alive
+        checks.push({ name: 'Plugin instance', pass: true, detail: 'this is defined' });
+
+        // 2. Vault adapter writable (real IO)
+        try {
+            const testPath = '.obsidian/.obsidian_log_exporter_health';
+            await this.app.vault.adapter.write(testPath, '{"health":true}');
+            const readBack = await this.app.vault.adapter.read(testPath);
+            const parsed = JSON.parse(readBack);
+            if (parsed.health === true) {
+                checks.push({ name: 'Vault IO (write/read)', pass: true, detail: 'read/write OK' });
+            } else {
+                checks.push({ name: 'Vault IO (write/read)', pass: false, detail: 'readback mismatch' });
+                ok = false;
+            }
+            await this.app.vault.adapter.remove(testPath).catch(() => {});
+        } catch (e) {
+            checks.push({ name: 'Vault IO (write/read)', pass: false, detail: e.message });
+            ok = false;
+        }
+
+        // 3. Sync plugin state
+        try {
+            const syncPlugin = this.app.internalPlugins.plugins.sync;
+            if (syncPlugin && syncPlugin.instance) {
+                const inst = syncPlugin.instance;
+                const state = `initialized=${inst.initialized}, ready=${inst.ready}, deviceName=${inst.deviceName || 'null'}`;
+                checks.push({ name: 'Sync plugin', pass: !!inst.ready, detail: state });
+                if (!inst.ready) ok = false;
+            } else {
+                checks.push({ name: 'Sync plugin', pass: false, detail: 'not found' });
+                ok = false;
+            }
+        } catch (e) {
+            checks.push({ name: 'Sync plugin', pass: false, detail: e.message });
+            ok = false;
+        }
+
+        // 4. File event listeners registered
+        checks.push({ name: 'Realtime listeners', pass: this.fileEventsRegistered, detail: `registered=${this.fileEventsRegistered}` });
+        if (!this.fileEventsRegistered) ok = false;
+
+        // 5. Status file readable and recent
+        try {
+            const raw = await this.app.vault.adapter.read(STATUS_FILE);
+            const status = JSON.parse(raw);
+            const ageSec = (Date.now() - new Date(status.ts).getTime()) / 1000;
+            const recent = ageSec < 300; // within 5 min
+            checks.push({ name: 'Last status file', pass: recent, detail: `stage=${status.stage}, age=${Math.round(ageSec)}s` });
+            if (!recent) ok = false;
+        } catch (e) {
+            checks.push({ name: 'Last status file', pass: false, detail: e.message });
+            ok = false;
+        }
+
+        // 6. Export file exists and valid JSON
+        try {
+            const raw = await this.app.vault.adapter.read(EXPORT_FILE);
+            const exported = JSON.parse(raw);
+            const hasData = Array.isArray(exported.server_files);
+            checks.push({ name: 'Export file', pass: hasData, detail: `server_files=${hasData ? exported.server_files.length : 'N/A'}` });
+            if (!hasData) ok = false;
+        } catch (e) {
+            checks.push({ name: 'Export file', pass: false, detail: e.message });
+            ok = false;
+        }
+
+        return { ok, checks };
     }
 
     onunload() {
@@ -316,3 +392,57 @@ module.exports = class ObsidianLogExporter extends Plugin {
         console.log("[ObsidianLogExporter] Plugin unloaded");
     }
 };
+
+class ObsidianLogExporterSettingTab extends PluginSettingTab {
+    constructor(app, plugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
+
+    display() {
+        const { containerEl } = this;
+        containerEl.empty();
+        containerEl.createEl('h2', { text: 'Obsidian Log Exporter' });
+
+        let resultBox = null;
+
+        new Setting(containerEl)
+            .setName('Health Check')
+            .setDesc('Run a real check: vault IO, sync state, listeners, export integrity.')
+            .addButton(btn => btn
+                .setButtonText('Verify')
+                .onClick(async () => {
+                    btn.setDisabled(true);
+                    btn.setButtonText('Checking...');
+                    try {
+                        const health = await this.plugin.healthCheck();
+                        if (resultBox) resultBox.remove();
+                        resultBox = containerEl.createDiv();
+                        resultBox.style.marginTop = '12px';
+
+                        const summary = resultBox.createEl('div', {
+                            text: health.ok ? 'All checks passed.' : 'Some checks failed.',
+                        });
+                        summary.style.fontWeight = 'bold';
+                        summary.style.marginBottom = '8px';
+                        summary.style.color = health.ok ? 'var(--text-success)' : 'var(--text-error)';
+
+                        const list = resultBox.createEl('ul');
+                        list.style.paddingLeft = '20px';
+                        list.style.margin = '0';
+                        for (const c of health.checks) {
+                            const li = list.createEl('li');
+                            li.style.marginBottom = '4px';
+                            const mark = c.pass ? '✅' : '❌';
+                            li.createEl('span', { text: `${mark} ${c.name}: ` });
+                            const detail = li.createEl('span', { text: c.detail });
+                            detail.style.color = 'var(--text-muted)';
+                            detail.style.fontSize = '0.9em';
+                        }
+                    } finally {
+                        btn.setDisabled(false);
+                        btn.setButtonText('Verify');
+                    }
+                }));
+    }
+}

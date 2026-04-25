@@ -7,35 +7,63 @@
     "timezone": "Asia/Shanghai",
     "comment": "每天下午 4 点执行"
   },
-  "command": {
-    "working_directory": "C:\\Hello-World\\knowledge-growth",
-    "entrypoint": "python",
-    "args": ["daily_broadcast.py"],
-    "comment": "入口脚本：daily_broadcast.py。扫描过去 24h 的 Obsidian 增量，生成简洁播报文本输出到 stdout，同时写入 reports/broadcast_YYYY-MM-DD.txt"
-  },
+  "commands": [
+    {
+      "name": "group_broadcast",
+      "working_directory": "C:\\Hello-World\\knowledge-growth",
+      "entrypoint": "python",
+      "args": ["daily_broadcast.py"],
+      "comment": "群聊播报：扫描过去 24h 增量，生成全量播报文本输出到 stdout"
+    },
+    {
+      "name": "dm_delivery",
+      "working_directory": "C:\\Hello-World\\knowledge-growth",
+      "entrypoint": "python",
+      "args": ["dm_deliver.py"],
+      "comment": "DM 投递：为每个人生成对方摘要+需关注更新，私聊到个人渠道。不配 DM_CHANNELS 则自动跳过"
+    }
+  ],
   "environment": {
     "VAULT_PATH": "C:\\Users\\ryshi\\Documents\\AIC-000",
     "NAME_ALIAS": "{\"Rosetta Guo\":\"Rosetta\",\"veilchow\":\"Veil\"}",
-    "REPORTS_DIR": "./reports"
+    "REPORTS_DIR": "./reports",
+    "DM_CHANNELS": "{\"Rosetta\":\"D0AH3RMFQQ1\",\"Veil\":\"D0AHK6X1N6L\"}",
+    "SLACK_BOT_TOKEN": "xoxb-..."
   },
   "output": {
-    "stdout_capture": true,
-    "file_output": "reports/broadcast_YYYY-MM-DD.txt",
-    "comment": "stdout 即为播报正文，可直接转发到 Slack/WeCom/邮件"
+    "group_broadcast": {
+      "stdout_capture": true,
+      "file_output": "reports/broadcast_YYYY-MM-DD.txt",
+      "delivery": {
+        "channel": "Slack",
+        "channel_id": "C0AE7L7J0EL",
+        "skip_if_empty": true
+      }
+    },
+    "dm_delivery": {
+      "stdout_capture": false,
+      "comment": "dm_deliver.py 内部直接调用 API 投递，stdout 仅用于日志"
+    }
   },
   "system_instruction_for_agent": {
     "role": "你是一个每日知识库播报助手",
-    "task": "每天 16:00 运行 C:\\Hello-World\\knowledge-growth\\daily_broadcast.py",
+    "task": "每天 16:00 依次运行群聊播报 + DM 投递",
     "behavior": [
-      "执行后捕获 stdout 作为播报正文",
-      "将播报正文发送到指定的消息通道",
-      "如果 stdout 为空或只有 '今日无更新'，则跳过发送",
+      "先执行 daily_broadcast.py，捕获 stdout 作为群聊播报正文发到 Slack C0AE7L7J0EL",
+      "如果群聊 stdout 为空或只有 '今日无更新'，则跳过群聊发送",
+      "再执行 dm_deliver.py，为每个人私聊投递交叉关注+对方摘要",
+      "如果 DM_CHANNELS 未配置或当日无交叉关注，dm_deliver.py 会自动跳过",
       "如果执行失败，记录错误日志并通知管理员"
     ],
-    "delivery_channel": {
-      "current": "Slack",
-      "channel_id": "C0AE7L7J0EL",
-      "note": "如需更换 IM 渠道（WeCom、Discord、Telegram 等），请修改 cron job 的 system-event 中的 channel ID，并确保 OpenClaw 已配置对应渠道的 credentials"
+    "delivery_channels": {
+      "group": {
+        "current": "Slack",
+        "channel_id": "C0AE7L7J0EL"
+      },
+      "dm": {
+        "current": "Slack DM",
+        "note": "通过 DM_CHANNELS 配置个人渠道，当前支持 Slack。未来可扩展 WeCom/Discord 等"
+      }
     },
     "dependencies": [
       "Obsidian 必须正在运行（obsidian-log-exporter 插件实时导出 Sync 数据）",
