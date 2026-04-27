@@ -587,7 +587,10 @@ def build_dm_text(observer: str, results_by_contributor: dict) -> str:
 
 
 def main():
-    results = scan_daily_increments(days=1)
+    # Incremental scan: only files modified since last successful broadcast.
+    # state.json tracks the checkpoint; on first run or after deletion it
+    # defaults to last 24h to avoid blasting historical files.
+    results = scan_daily_increments()
     results = {k: v for k, v in results.items() if v}
     broadcast = build_broadcast(results)
     print(broadcast)
